@@ -8,6 +8,8 @@ at [Brown University](http://brown.edu).
 
 jiTADtree was modified by Takaho A. Endo in [IMS, RIKEN](http://www.ims.riken.jp/).  jiTADtree modified the original source code to use just-in-time (JIT) compilier technology provided by [Numba](https://numba.pydata.org/) project.
 
+jiTADtree also works either on Python2 and Python3.
+
 ## Usage ##
 To run, use command:
 python <path to jitadtree.py> <path to control file>
