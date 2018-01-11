@@ -32,6 +32,8 @@ proportion of TADs in each TAD set removed as duplicates is recorded in
 
 
 ## Parameters ##
+threads (--threads option, default 1), the number of processor the program uses (>=Python3.2).
+
 S (-S option, default 50), the maximum allowable size for a TAD, is measured in bins. Thus, S must be increased to 
 for higher-resolution data to detect TADs of the same physical size. Note, however, that
 the run-time of TADtree is ~O(S^5) so high values of S will have a high performance
