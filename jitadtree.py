@@ -1,6 +1,6 @@
 #coding:utf-8
 import os, sys, re, argparse, time
-import numba
+import numba, numba.cuda
 import numpy as np
 
 @numba.njit('f8(f8[:,:],f8[:],i8,i8,f8,f8)')
@@ -45,6 +45,43 @@ Returns
         cov = sxy / n - mx * my
         return np.array([cov / vx, my - cov * mx / vx])
 
+# @numba.cuda.jit('void(i8, f8[:],f8[:],f8[2])', parallel=True)
+# def __linregress_gpu(n, x, y, ret):
+#         """Simpler version of linear regression which returns only slope and intercect.
+# Parameters
+#  x, y: values 
+# Returns
+#  numpy array of two float64 digits giving slope and intercect"""
+#         sx = sxx = sxy = syy = sy = 0
+#         for i in numba.prange(n):
+#                 sx += x[i]
+#                 sy += y[i]
+#                 sxx += x[i] ** 2
+#                 syy += y[i] ** 2
+#                 sxy += x[i] * y[i]
+#         mx = sx / n
+#         my = sy / n
+#         vx = (sxx - mx * sx) / n
+#         vy = (syy - my * sy) / n
+#         cov = sxy / n - mx * my
+#         ret[0] = cov / vx
+#         ret[1] = my - cov * my / vx
+#
+# @numba.cuda.jit('void(f8[:,:],f8[:],i8,i8,f8[:],f8[:],f8[3])')
+# def __betadelta_gpu(mat, backgrnd, i, j, x, y, ret):
+#         """Numba version of fitting function using linear regression. """
+#         n = j-i
+#         index = 0
+#         for k in range(n):
+#                 for l in range(k+1,n):
+#                         x[index] = float(l-k)
+#                         y[index] = mat[i+k,i+l] / backgrnd[l-k]
+#                         index += 1
+#         delta, beta = __linregress_gpu(index, x,y)
+#         fit = __update_fit(mat, backgrnd, i, j, delta, beta)
+#         ret[0] = beta
+#         ret[1] = delta
+#         ret[2] = fit
 
 @numba.njit('f8[3](f8[:,:],f8[:],i8,i8,f8[:],f8[:])')
 def __betadelta(mat, backgrnd, i, j, x, y):
@@ -65,6 +102,10 @@ def __update_matrices(mat, backgrnd, smat, gmat, bmat, n, height, x, y):
         for i in range(n-2):
                 stop = n if n - i < height else height + i
                 for j in range(i + 3, stop):
+                        res = np.array([0., 0., 0.])
+#                        __betadelta_gpu(mat, backgrnd, i, j, x, y, res)
+#                        beta,delta,fit = res
+                        # beta,delta,fit = __betadelta(mat, backgrnd, i, j, x, y)
                         beta,delta,fit = __betadelta(mat, backgrnd, i, j, x, y)
                         smat[i,j] = smat[j,i] = fit
                         gmat[i,j] = delta
@@ -82,12 +123,8 @@ def __update_smat(mat, backgrnd, smat, height):
                                 for l in numba.prange(k + 1, j - i):
                                         fit += (mat[i + k, i + l] - backgrnd[ l - k ]) ** 2
                         smat[i, j] = smat[j, i] = fit
-        return# smat
+        return
 
-
-#----------------------------------------------------------------------------------------#
-#                               BOUNDED HIERARCHICAL WEIGHTED INTERVAL SCHEDULING
-#----------------------------------------------------------------------------------------#
 @numba.njit('void(f8[:,:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:,:,:], f8[:,:], i8, i8, i8, i8, i8, f8[:,:])', parallel=True)
 def __update_options(mat, gmat, bmat, bakmat, backgrnd, score, local_score, min_size, i, j, k, t, options):
         options[0,0] = local_score[k-1,t]
@@ -108,7 +145,7 @@ def __update_options(mat, gmat, bmat, bakmat, backgrnd, score, local_score, min_
 
 @numba.njit('void(f8[:,:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:,:,:], f8[:,:], i8, i8, i8, i8, i8, f8[:,:], i8[:,:], i8[:,:])')
 def __update_local_traceback(mat, gmat, bmat, bakmat, backgrnd, score, local_score, min_size, t_lim, n, i, j, options, local_traceback_k, local_traceback_t):
-        for k in range(min_size,n+1): #
+        for k in range(min_size,n+1): 
                 stop = t_lim if t_lim < k - min_size + 1 else k - min_size + 1
                 for t in range(1,stop):
                         options[0:k+1,0:t] = 0
@@ -276,7 +313,8 @@ def all_intervals(local_parts_array,i,j,t):
         return intervals                                
 
 def retrieve_parameters():
-        """Read parameters from preference file or comman line argument"""
+        """Read parameters from preference file or comman line argument
+        """
         chrs = [] 
         paths = []
         N = []
@@ -299,11 +337,17 @@ def retrieve_parameters():
         parser.add_argument('-g', type=int, metavar='number', default=None, help='balance between boundary index and squared error in score function : default 500')
         parser.add_argument('-o', metavar='filename', default='output', help='output directory : default output')
         parser.add_argument('-i', default=[], metavar='directory', nargs='+', help='matrix files in plain text')
+        parser.add_argument('--threads', type=int, metavar='number', default=1, help='number of processes (>=Python3.2): default 1')
         parser.add_argument('--quiet', action='store_true', help='Suppress verbose messages')
         parser.add_argument('control_file', nargs='*')
         args = parser.parse_args()
 
         verbose = not args.quiet
+        num_threads = max(1, args.threads)
+        if num_threads > 1:
+                if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 2):
+                        sys.stderr.write('Error : multiprocesssing is available only with >=Python3.2')
+                        num_threads = 1
         contact_map_path = []
         contact_map_name = []
         N = []
@@ -422,9 +466,104 @@ def retrieve_parameters():
         parameters = {'S':S, 'p':p, 'q':q, 'M':M, 'gamma':gamma, 
                 'output_directory':output_directory, 
                 'contact_map_path':contact_map_path, 'contact_map_name':contact_map_name, 'N':N,
+                'threads':num_threads,
                 'verbose':verbose
                 }
         return parameters
+
+def __process_chromosome(chr_index, min_size, t_lim, T_lim, mat, backgrnd, gmat, bmat, bakmat, smat, parameters):
+        map_file = parameters['contact_map_path'][chr_index]
+        map_name = chr = parameters['contact_map_name'][chr_index]
+        map_size = parameters['N'][chr_index]
+        output_directory = parameters['output_directory']
+        p = parameters['p']
+        q = parameters['q']
+        gamma = parameters['gamma']
+        verbose = parameters['verbose']
+        S = height = parameters['S']
+        M = parameters['M']
+        num_threads = parameters['threads']
+        short = p; long = 1; steps=q
+        bi = []
+        for i in range(long,mat.shape[0]-long):
+                b = 0
+                for s in range(1,steps):
+                        a1 = np.sum(mat[i-long*s:i-long*(s-1),i-short:i])
+                        b1 = np.sum(mat[i-long*s:i-long*(s-1),i:i+short])
+                        a2 = np.sum(mat[i+long*(s-1):i+long*s,i-short:i])
+                        b2 = np.sum(mat[i+long*(s-1):i+long*s,i:i+short])       
+                        b += np.abs(a1-b1) + np.abs(a2-b2)      
+                bi += [b]
+        bi = [0]*long + bi + [0]*long
+        bi = (np.array(bi) - np.mean(bi)) / np.std(bi) 
+
+        for i in range(mat.shape[0]):
+                for j in range(mat.shape[1]):
+                        if bi[i] < 0 or bi[j] < 0: smat[i,j] = np.inf
+                        else: smat[i,j] = smat[i,j] - gamma*(bi[i]+bi[j])
+        if verbose and num_threads == 1: 
+                sys.stderr.write('\033[F\033[K')
+                sys.stderr.write(time.strftime('[%H:%M:%S] Building TADtrees for ', time.localtime()) + chr + '\n')
+
+        L = smat.shape[0] # size of the matrix
+        local_parts_array, score = __buildtrees(mat, backgrnd, smat, gmat, bmat, bakmat, t_lim, height, min_size) # numba version
+        
+        if verbose and num_threads == 1: 
+                sys.stderr.write('\033[F\033[K')
+                sys.stderr.write(time.strftime('[%H:%M:%S] Assembling TADforest for ', time.localtime()) + chr + '\n')
+        totalscore,traceback_k,traceback_t = getforest(score, L, height, T_lim, t_lim, min_size)
+
+#                print(np.sum(mat[mat<1e10]), np.sum(smat[smat<1e10]), np.sum(gmat[gmat<1e10]), np.sum(bmat[bmat<1e10]),np.sum(bakmat[bakmat<1e10]))
+
+        if not os.path.exists(os.path.join(output_directory, chr)):
+                os.makedirs(os.path.join(output_directory, chr))
+        duplicates = []
+
+        for start_t in range(1,T_lim):
+                L = totalscore.shape[0]
+                trees = np.zeros((L * 2,3), dtype=np.int64)
+                _tree_size = __foresttb(traceback_k, traceback_t, totalscore.shape[0], min_size, start_t, trees)#_tx, _ty, _tz)
+                trees = trees[0:_tree_size]
+                allints = []
+
+                for t in trees:
+                        allints += all_intervals(local_parts_array,t[0],t[1],t[2])
+
+                allints = sorted(allints, key = lambda x: np.abs(x[1]-x[0]))
+
+                final_ints = []
+                for t in allints:
+                        duplicate = False
+                        for tt in final_ints:
+                                if (np.abs(t[0] - tt[0]) < 2 and np.abs(t[1] - tt[1]) < 2):
+                                        duplicate = True
+                                        
+                        if not duplicate:
+                                final_ints.append([t[0], t[1]])
+
+                with open(os.path.join(output_directory, chr, 'N{}.txt'.format(start_t)), 'w') as fo:
+                        fo.write('chr\tstart\tend\n')
+                        for t in sorted(final_ints, key=lambda x:x[0]):
+                                fo.write('{}\t{}\t{}\n'.format(chr, t[0], t[1]))
+                duplicates.append((start_t, 1. - float(len(final_ints)) / len(allints)))
+                
+        with open(os.path.join(output_directory, chr, 'parameters.txt'),'w') as fo:
+                fo.write('Filename : {}\n'.format(map_file))
+                fo.write('Size : {}\n'.format(map_size))
+                fo.write('Name : {}\n'.format(map_name))
+                fo.write('Maximum TAD size : {}\n'.format(S))
+                fo.write('Maximum TADs in each tree : {}\n'.format(M))
+                fo.write('Boundary index parameter : {} , {}\n'.format(p, q))
+                fo.write('Balance between boundary : {}\n'.format(gamma))
+                
+        with open(os.path.join(output_directory, chr, 'proportion_duplicates.txt'),'w') as fo:
+                fo.write('name\tproportion_duplicates\n')
+                for val in duplicates:
+                        fo.write('{}\t{}\n'.format(val[0], val[1]))
+        if verbose:
+                if num_threads == 1: 
+                        sys.stderr.write('\033[F\033[K')
+                sys.stderr.write(time.strftime('[%H:%M:%S] ', time.localtime()) + chr + ' completed\n')
 
 def main():
         parameters = retrieve_parameters()
@@ -438,6 +577,7 @@ def main():
         contact_map_name = parameters['contact_map_name']
         N = parameters['N']
         verbose = parameters['verbose']
+        num_threads = parameters['threads']
 
         if verbose:
                 sys.stderr.write('Maximum TAD size : {}\n'.format(S))
@@ -448,6 +588,7 @@ def main():
                 sys.stderr.write('Contact files : {}\n'.format(','.join(contact_map_path)))
                 sys.stderr.write('Contact names : {}\n'.format(','.join(contact_map_name)))
                 sys.stderr.write('Contact sizes : {}\n'.format(','.join(['{}'.format(n) for n in N])))
+                sys.stderr.write('Number of threads: {}\n'.format(num_threads))
 
         #----------------------------------------------------------------------------------------#
         #                                                          LOAD CONTACTS AND BACKGROUND
@@ -505,10 +646,16 @@ def main():
         
         if verbose: 
                 sys.stderr.write(time.strftime('\033[F\033[K[%H:%M:%S] Precomputing background completed\n', time.localtime()))
-        # Dynamic programing
+
+        if sys.version_info[0] >= 3 and sys.version_info[1] >= 2 and num_threads > 1:
+                import concurrent.futures
+                executor = concurrent.futures.ProcessPoolExecutor(max_workers=num_threads)
+                futures = []
+        else:
+                executor = None
+
         for chr_index in range(len(chrs)):
                 chr = chrs[chr_index]
-                if verbose: sys.stderr.write(time.strftime('[%H:%M:%S] Running dynamic program for ', time.localtime()) + chr + '\n')
                 map_file = contact_map_path[chr_index]
                 map_name = contact_map_name[chr_index]
                 map_size = N[chr_index]
@@ -521,87 +668,17 @@ def main():
                 bmat = chrbetas[chr]
                 bakmat = bakscores[chr]
                 smat = tadscores[chr] - bakscores[chr]
-
-                short = p; long = 1; steps=q
-                bi = []
-                for i in range(long,mat.shape[0]-long):
-                        b = 0
-                        for s in range(1,steps):
-                                a1 = np.sum(mat[i-long*s:i-long*(s-1),i-short:i])
-                                b1 = np.sum(mat[i-long*s:i-long*(s-1),i:i+short])
-                                a2 = np.sum(mat[i+long*(s-1):i+long*s,i-short:i])
-                                b2 = np.sum(mat[i+long*(s-1):i+long*s,i:i+short])       
-                                b += np.abs(a1-b1) + np.abs(a2-b2)      
-                        bi += [b]
-                bi = [0]*long + bi + [0]*long
-                bi = (np.array(bi) - np.mean(bi)) / np.std(bi) 
-
-                for i in range(mat.shape[0]):
-                        for j in range(mat.shape[1]):
-                                if bi[i] < 0 or bi[j] < 0: smat[i,j] = np.inf
-                                else: smat[i,j] = smat[i,j] - gamma*(bi[i]+bi[j])
-                if verbose: 
-                        sys.stderr.write('\033[F\033[K')
-                        sys.stderr.write(time.strftime('[%H:%M:%S] Building TADtrees for ', time.localtime()) + chr + '\n')
-
-                L = smat.shape[0] # size of the matrix
-                local_parts_array, score = __buildtrees(mat, backgrnd, smat, gmat, bmat, bakmat, t_lim, height, min_size) # numba version
-                
-                if verbose:
-                        sys.stderr.write('\033[F\033[K')
-                        sys.stderr.write(time.strftime('[%H:%M:%S] Assembling TADforest for ', time.localtime()) + chr + '\n')
-                totalscore,traceback_k,traceback_t = getforest(score, L, height, T_lim, t_lim, min_size)
-
-#                print(np.sum(mat[mat<1e10]), np.sum(smat[smat<1e10]), np.sum(gmat[gmat<1e10]), np.sum(bmat[bmat<1e10]),np.sum(bakmat[bakmat<1e10]))
-
-                if not os.path.exists(os.path.join(output_directory, chr)):
-                        os.makedirs(os.path.join(output_directory, chr))
-                duplicates = []
-
-                for start_t in range(1,T_lim):
-                        L = totalscore.shape[0]
-                        trees = np.zeros((L * 2,3), dtype=np.int64)
-                        _tree_size = __foresttb(traceback_k, traceback_t, totalscore.shape[0], min_size, start_t, trees)#_tx, _ty, _tz)
-                        trees = trees[0:_tree_size]
-                        allints = []
-
-                        for t in trees:
-                                allints += all_intervals(local_parts_array,t[0],t[1],t[2])
-
-                        allints = sorted(allints, key = lambda x: np.abs(x[1]-x[0]))
-
-                        final_ints = []
-                        for t in allints:
-                                duplicate = False
-                                for tt in final_ints:
-                                        if (np.abs(t[0] - tt[0]) < 2 and np.abs(t[1] - tt[1]) < 2):
-                                                duplicate = True
-                                                
-                                if not duplicate:
-                                        final_ints.append([t[0], t[1]])
-
-                        with open(os.path.join(output_directory, chr, 'N{}.txt'.format(start_t)), 'w') as fo:
-                                fo.write('chr\tstart\tend\n')
-                                for t in sorted(final_ints, key=lambda x:x[0]):
-                                        fo.write('{}\t{}\t{}\n'.format(chr, t[0], t[1]))
-                        duplicates.append((start_t, 1. - float(len(final_ints)) / len(allints)))
-                        
-                with open(os.path.join(output_directory, chr, 'parameters.txt'),'w') as fo:
-                        fo.write('Filename : {}\n'.format(map_file))
-                        fo.write('Size : {}\n'.format(map_size))
-                        fo.write('Name : {}\n'.format(map_name))
-                        fo.write('Maximum TAD size : {}\n'.format(S))
-                        fo.write('Maximum TADs in each tree : {}\n'.format(M))
-                        fo.write('Boundary index parameter : {} , {}\n'.format(p, q))
-                        fo.write('Balance between boundary : {}\n'.format(gamma))
-                        
-                with open(os.path.join(output_directory, chr, 'proportion_duplicates.txt'),'w') as fo:
-                        fo.write('name\tproportion_duplicates\n')
-                        for val in duplicates:
-                                fo.write('{}\t{}\n'.format(val[0], val[1]))
-                if verbose:
-                        sys.stderr.write('\033[F\033[K')
-                        sys.stderr.write(time.strftime('[%H:%M:%S] ', time.localtime()) + chr + ' completed\n')
+                # Dynamic programing
+                if executor:
+                        # print('\n\nconcurrent ' + chr + '\n\n')
+                        fs = executor.submit(__process_chromosome, chr_index, min_size, t_lim, T_lim, mat, backgrnd, gmat, bmat, bakmat, smat, parameters)
+                        futures.append(fs)
+                        # print(fs)
+                else:
+                        if verbose: sys.stderr.write(time.strftime('[%H:%M:%S] Running dynamic program for ', time.localtime()) + chr + '\n')
+                        __process_chromosome(chr_index, min_size, t_lim, T_lim, mat, backgrnd, gmat, bmat, bakmat, smat, parameters)
+        if executor: 
+                concurrent.futures.wait(futures)
 
 if __name__ == '__main__':
         main()
