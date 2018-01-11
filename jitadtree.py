@@ -3,7 +3,7 @@
 JIT version of TADtree to detection Hi-C contact regions.
 """
 import os, sys, re, argparse, time
-import numba, numba.cuda
+import numba
 import numpy as np
 
 @numba.njit('f8(f8[:,:],f8[:],i8,i8,f8,f8)')
