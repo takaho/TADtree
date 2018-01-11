@@ -2,23 +2,7 @@
 import os, sys, re, argparse, time
 import numba
 import numpy as np
-#import scipy.stats
 
-
-### Unused function
-# def normalize(mat, background):
-#         out = np.array(mat)
-#         n = len(background)
-#         for i in range(mat.shape[0]):
-#                 for j in range(max([0,i-n+1]),min([i+n,mat.shape[0]])):
-#                         if mat[i,j] > 0:
-#                                 out[i,j] = np.log(mat[i,j] / background[int(np.abs(j-i))])
-#                         else: out[i,j] = 0
-#         return out
-
-#----------------------------------------------------------------------------------------#
-#                                                                       PRECOMPUTE SCORES
-#----------------------------------------------------------------------------------------#
 @numba.njit('f8(f8[:,:],f8[:],i8,i8,f8,f8)')
 def __update_fit(mat, backgrnd, i, j, delta, beta):
         """Fitting parameter
@@ -99,28 +83,6 @@ def __update_smat(mat, backgrnd, smat, height):
                                         fit += (mat[i + k, i + l] - backgrnd[ l - k ]) ** 2
                         smat[i, j] = smat[j, i] = fit
         return# smat
-
-
-# def betadelta(chr,i,j):
-#         n = j-i
-#         x,y = [],[]
-#         for k in range(n):
-#                 for l in range(k+1,n):
-#                         x += [float(l-k)]
-#                         y += [mats[chr][i+k,i+l] / backgrnd[l-k]]
-#         x = np.array(x)
-#         y = np.array(y)
-#         delta, beta, r_value, p_value, std_err = ss.linregress(x,y)
-
-#         if delta < 0:  fit = np.inf
-#         else:
-#                 fit = 0
-#                 for k in range(n-1):
-#                         for l in range(k+1,n):
-#                                 fit += ((float(l-k)*delta+beta)*backgrnd[l-k] - mats[chr][i+k,i+l])**2
-#         return beta,delta,fit
-        
-#----------------------------------------------------------------------------------------#
 
 
 #----------------------------------------------------------------------------------------#
@@ -284,7 +246,6 @@ def getforest(score,L, height,T_lim,t_lim,min_size):
         traceback_t = np.zeros((L,T_lim),dtype=int)
         options = np.zeros((L, T_lim))
         __update_forest_options(options, totalscore, score, min_size, L, T_lim, t_lim, height, traceback_k, traceback_t)
-        # print('getforest', np.sum(score), np.sum(totalscore), np.sum(traceback_k), np.sum(traceback_t), np.sum(options))
         return totalscore,traceback_k, traceback_t
 
 @numba.njit('i8(i8[:,:],i8[:,:],i8,i8,i8,i8[:,:])',parallel=True)
@@ -315,8 +276,7 @@ def all_intervals(local_parts_array,i,j,t):
         return intervals                                
 
 def retrieve_parameters():
-        """Read parameters from preference file or comman line argument
-        """
+        """Read parameters from preference file or comman line argument"""
         chrs = [] 
         paths = []
         N = []
