@@ -1,4 +1,7 @@
 #coding:utf-8
+"""jiTADtree
+JIT version of TADtree to detection Hi-C contact regions.
+"""
 import os, sys, re, argparse, time
 import numba, numba.cuda
 import numpy as np
@@ -105,7 +108,6 @@ def __update_matrices(mat, backgrnd, smat, gmat, bmat, n, height, x, y):
                         res = np.array([0., 0., 0.])
 #                        __betadelta_gpu(mat, backgrnd, i, j, x, y, res)
 #                        beta,delta,fit = res
-                        # beta,delta,fit = __betadelta(mat, backgrnd, i, j, x, y)
                         beta,delta,fit = __betadelta(mat, backgrnd, i, j, x, y)
                         smat[i,j] = smat[j,i] = fit
                         gmat[i,j] = delta
@@ -472,6 +474,7 @@ def retrieve_parameters():
         return parameters
 
 def __process_chromosome(chr_index, min_size, t_lim, T_lim, mat, backgrnd, gmat, bmat, bakmat, smat, parameters):
+        """Analyze a contact map of given chromosome """
         map_file = parameters['contact_map_path'][chr_index]
         map_name = chr = parameters['contact_map_name'][chr_index]
         map_size = parameters['N'][chr_index]
@@ -513,7 +516,7 @@ def __process_chromosome(chr_index, min_size, t_lim, T_lim, mat, backgrnd, gmat,
                 sys.stderr.write(time.strftime('[%H:%M:%S] Assembling TADforest for ', time.localtime()) + chr + '\n')
         totalscore,traceback_k,traceback_t = getforest(score, L, height, T_lim, t_lim, min_size)
 
-#                print(np.sum(mat[mat<1e10]), np.sum(smat[smat<1e10]), np.sum(gmat[gmat<1e10]), np.sum(bmat[bmat<1e10]),np.sum(bakmat[bakmat<1e10]))
+        #print(np.sum(mat[mat<1e10]), np.sum(smat[smat<1e10]), np.sum(gmat[gmat<1e10]), np.sum(bmat[bmat<1e10]),np.sum(bakmat[bakmat<1e10]))
 
         if not os.path.exists(os.path.join(output_directory, chr)):
                 os.makedirs(os.path.join(output_directory, chr))
@@ -546,16 +549,7 @@ def __process_chromosome(chr_index, min_size, t_lim, T_lim, mat, backgrnd, gmat,
                         for t in sorted(final_ints, key=lambda x:x[0]):
                                 fo.write('{}\t{}\t{}\n'.format(chr, t[0], t[1]))
                 duplicates.append((start_t, 1. - float(len(final_ints)) / len(allints)))
-                
-        with open(os.path.join(output_directory, chr, 'parameters.txt'),'w') as fo:
-                fo.write('Filename : {}\n'.format(map_file))
-                fo.write('Size : {}\n'.format(map_size))
-                fo.write('Name : {}\n'.format(map_name))
-                fo.write('Maximum TAD size : {}\n'.format(S))
-                fo.write('Maximum TADs in each tree : {}\n'.format(M))
-                fo.write('Boundary index parameter : {} , {}\n'.format(p, q))
-                fo.write('Balance between boundary : {}\n'.format(gamma))
-                
+
         with open(os.path.join(output_directory, chr, 'proportion_duplicates.txt'),'w') as fo:
                 fo.write('name\tproportion_duplicates\n')
                 for val in duplicates:
@@ -566,6 +560,7 @@ def __process_chromosome(chr_index, min_size, t_lim, T_lim, mat, backgrnd, gmat,
                 sys.stderr.write(time.strftime('[%H:%M:%S] ', time.localtime()) + chr + ' completed\n')
 
 def main():
+        # Load parameters from comman line arguments
         parameters = retrieve_parameters()
         S = parameters['S']
         p = parameters['p']
@@ -578,7 +573,9 @@ def main():
         N = parameters['N']
         verbose = parameters['verbose']
         num_threads = parameters['threads']
+        time_start = time.time()
 
+        # Display parameters
         if verbose:
                 sys.stderr.write('Maximum TAD size : {}\n'.format(S))
                 sys.stderr.write('Maximum TADs in each tree : {}\n'.format(M))
@@ -590,16 +587,12 @@ def main():
                 sys.stderr.write('Contact sizes : {}\n'.format(','.join(['{}'.format(n) for n in N])))
                 sys.stderr.write('Number of threads: {}\n'.format(num_threads))
 
-        #----------------------------------------------------------------------------------------#
-        #                                                          LOAD CONTACTS AND BACKGROUND
-        #----------------------------------------------------------------------------------------#
-        # load data
+        # Load data
         if verbose: sys.stderr.write(time.strftime('[%H:%M:%S] Loading data        \n', time.localtime()))
         chrs = contact_map_name
         paths = contact_map_path
-
-        mats = {chrs[i] : np.loadtxt(paths[i]) for i in range(len(paths))}
         height = S
+        mats = {chrs[i] : np.loadtxt(paths[i]) for i in range(len(paths))}
         backbins = []
         for chr in chrs:
                 for i in range(mats[chr].shape[0]-height):
@@ -631,6 +624,7 @@ def main():
                 chrbetas.update({chr:bmat})
         if verbose: 
                 sys.stderr.write(time.strftime('\033[F\033[K[%H:%M:%S] Precomputing parameters completed\n', time.localtime()))
+
         # Background calculation
         for chr_index in numba.prange(len(chrs)):
                 chr = chrs[chr_index]
@@ -679,6 +673,20 @@ def main():
                         __process_chromosome(chr_index, min_size, t_lim, T_lim, mat, backgrnd, gmat, bmat, bakmat, smat, parameters)
         if executor: 
                 concurrent.futures.wait(futures)
+
+        # output summary
+        time_end = time.time()
+        with open(os.path.join(output_directory, 'jitadtree.info'),'w') as fo:
+                fo.write('Filename : {}\n'.format(','.join(contact_map_path)))
+                fo.write('Name : {}\n'.format(','.join(contact_map_name)))
+                fo.write('Size : {}\n'.format(','.join(['{}'.format(x) for x in N])))
+                fo.write('Maximum TAD size : {}\n'.format(S))
+                fo.write('Maximum TADs in each tree : {}\n'.format(M))
+                fo.write('Boundary index parameter : {} , {}\n'.format(p, q))
+                fo.write('Balance between boundary : {}\n'.format(gamma))
+                fo.write('Threads : {}\n'.format(num_threads))
+                fo.write('Elapsed time : {:.1f} sec\n'.format(time_end - time_start))
+        
 
 if __name__ == '__main__':
         main()
