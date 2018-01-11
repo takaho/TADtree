@@ -1,14 +1,20 @@
-# TADtree
+# jiTADtree
 
-TADtree is an algorithm the identification of hierarchical topological domains in Hi-C data.
+jiTADtree is an enhanced version of TADtree program implementing algorithm of the identification of hierarchical topological domains in Hi-C data.
 
-It was developed by the [Raphael research group](http://compbio.cs.brown.edu) 
+Original TADtree was developed by the [Raphael research group](http://compbio.cs.brown.edu) 
 in the [Department of Computer Science](http://cs.brown.edu) and [Center for Computational Molecular Biology](http://brown.edu/ccmb) 
 at [Brown University](http://brown.edu).
+jiTADtree was modified by Takaho A. Endo in [IMS, RIKEN](http://www.ims.riken.jp/).  jiTADtree modified the original source code to use just-in-time (JIT) compilier technology provided vy [Numba](https://numba.pydata.org/) project.
 
 ## Usage ##
 To run, use command:
-python <path to TADtree.py> <path to control file>
+python <path to jitadtree.py> <path to control file>
+or
+python <path to jitadtree.py> -i <matrix files> -o <output directory> ...
+
+Upper style was prepared for the compatibility to TADtree.
+If users use lower style, sizes of matrices and names were automatically determined.
 
 See below for guidance on choice of parameters. Note that the parameter "N" specifies the
 maximum number of TADs to compute for each chromosome, but TADtree also computes TAD sets 
@@ -53,5 +59,4 @@ Caleb Weinreb and Benjamin J. Raphael.[Identification of hierarchical chromatin 
 	Bioinformatics, (2015) pii: btv485.
 
 [Website](http://compbio.cs.brown.edu/projects/tadtree)
-
     
