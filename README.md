@@ -6,7 +6,7 @@ Original TADtree was developed by the [Raphael research group](http://compbio.cs
 in the [Department of Computer Science](http://cs.brown.edu) and [Center for Computational Molecular Biology](http://brown.edu/ccmb) 
 at [Brown University](http://brown.edu).
 
-jiTADtree was modified by Takaho A. Endo in [IMS, RIKEN](http://www.ims.riken.jp/).  jiTADtree modified the original source code to use just-in-time (JIT) compilier technology provided vy [Numba](https://numba.pydata.org/) project.
+jiTADtree was modified by Takaho A. Endo in [IMS, RIKEN](http://www.ims.riken.jp/).  jiTADtree modified the original source code to use just-in-time (JIT) compilier technology provided by [Numba](https://numba.pydata.org/) project.
 
 ## Usage ##
 To run, use command:
