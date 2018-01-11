@@ -15,7 +15,7 @@ or
 python <path to jitadtree.py> -i <matrix files> -o <output directory> ...
 
 Upper style was prepared for the compatibility to TADtree.
-If users use lower style, sizes of matrices and names were automatically determined.
+If users use lower style, sizes of matrices and names were automatically determined. All of available parameters were given by command line.
 
 See below for guidance on choice of parameters. Note that the parameter "N" specifies the
 maximum number of TADs to compute for each chromosome, but TADtree also computes TAD sets 
@@ -28,13 +28,14 @@ proportion of TADs in each TAD set removed as duplicates is recorded in
 
 <output_directory>/<contact_map_name>/proportion_duplicates.txt
 
+
 ## Parameters ##
-S, the maximum allowable size for a TAD, is measured in bins. Thus, S must be increased to 
+S (-S option, default 50), the maximum allowable size for a TAD, is measured in bins. Thus, S must be increased to 
 for higher-resolution data to detect TADs of the same physical size. Note, however, that
 the run-time of TADtree is ~O(S^5) so high values of S will have a high performance
-penalty.
+penalty. 
 
-Gamma determines the trade-off between sensitivity to deviations from background the 
+Gamma (-g option, default 500) determines the trade-off between sensitivity to deviations from background the 
 contact map, and specificity for those deviations that are delineated by clear boundaries.
 The default value of gamma is likely to work for a variety of data.  However, if TAD 
 boundaries are poorly localized, it might be good to increase gamma. On the other hand, 
@@ -42,7 +43,7 @@ if multiple TADs accumulate at strong boundary points, gamma is probably too hig
 
 M = 10 should always work.
 
-p and q reflect the minimum scale over which changes in interaction preference can be 
+p (-p option, default 3) and q (-q option, default 12) reflect the minimum scale over which changes in interaction preference can be 
 robustly detected. My intuition is that these can stay the same, since this scale would 
 naturally decrease for high resolution data, and p and q are given in units of bins.
 
